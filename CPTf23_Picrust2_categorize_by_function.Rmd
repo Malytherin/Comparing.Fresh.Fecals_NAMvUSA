@@ -1,0 +1,78 @@
+---
+title: "CPTf23_Picrust2_categorize_by_function"
+author: "M. Maly"
+date: "2024-01-12"
+output: html_document
+---
+
+Categorize PICRUSt levels using hierarchy map so they can also be aggregated and analyzed at higher levels than level 3.
+NOTE: KEGG hierarchy classifications file is from Natalie Roberts (made in 2021)
+
+
+
+```{r, include=FALSE, eval=FALSE}
+### Read in BRITE hierarchy per KO.
+# Not using this method for now.
+kegg_brite_map <- read.table("picrust1_KO_BRITE_map(1).tsv",
+                              header=TRUE, sep="\t", quote = "", stringsAsFactors = FALSE, comment.char="", row.names=1)
+
+View(kegg_brite_map)
+
+# When reading in tab-delimited file of KO predictions (PICRUSt2 output):
+test_ko <- read.table("KO_CPTf_pred_metagenome_unstrat_descrip.tsv", header=TRUE, sep="\t", row.names=1)
+rownames(test_ko) <- toupper(rownames(test_ko))
+rownames(test_ko) <- gsub("^KO", "K", rownames(test_ko))
+View(test_ko)
+
+### Alternatively, when reading in legacy TSV BIOM file (PICRUSt1 output): 
+# test_ko <- read.table("/path/to/test_ko.tsv",
+#                      header=TRUE, sep="\t", row.names=1, skip=1, comment.char="")
+ 
+#if(length(which(colnames(test_ko) == "KEGG_Pathways")) > 0) {
+#     test_ko <- test_ko[, -which(colnames(test_ko) == "KEGG_Pathways")]
+#}
+
+### Run function to categorize all KOs by level 3 in BRITE hierarchy.
+test_ko_L3 <- categorize_by_function_l3(test_ko, kegg_brite_map)
+View(test_ko_L3)
+
+test_ko_L3_sorted <- test_ko_L3[rownames(orig_ko_L3), ]
+
+### Commands that could be used to compare the KO levels from this function with the actual output of categorize_by_function.py:
+orig_ko_L3 <- read.table("/path/to/test_ko_L3.tsv",
+                          header=TRUE, sep="\t", row.names=1, skip=1, comment.char="", quote="")
+
+orig_ko_L3 <- orig_ko_L3[, -which(colnames(orig_ko_L3) == "KEGG_Pathways")]
+ 
+orig_ko_L3 <- orig_ko_L3[-which(rowSums(orig_ko_L3) == 0),]
+
+### The below command will be True when the output is exactly the same.
+identical(test_ko_L3_sorted, orig_ko_L3)
+
+```
+
+### Make combined file with ko pathways and KEGG levels
+```{r}
+# Upload KO_path_abun_unstrat_descrip file from PICRUSt2 output
+CPTf23KOpath <- read.table("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/picrust2_out_CPTf2023/KEGG_pathways_out_CPTf/KO_CPTf_path_abun_unstrat_descrip.tsv", header = TRUE, sep = "\t", row.names = 1)
+head(CPTf23KOpath)
+class(CPTf23KOpath)
+rownames(CPTf23KOpath)
+dim(CPTf23KOpath) #139 ko pathways
+
+# Upload KEGG hierarchy classifications from file
+KEGGMappingHeirarchy <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/Kegg_Pathways_Heirarchy_040921.csv", header = TRUE, row.names = 1)
+head(KEGGMappingHeirarchy)
+rownames(KEGGMappingHeirarchy)
+
+# MERGE by pathway (rownames)
+# Now add in levels by merging by row.names
+CPTf23KOpath_with_LEVELS <- merge(CPTf23KOpath, KEGGMappingHeirarchy, by = 'row.names', all = FALSE)
+head(CPTf23KOpath_with_LEVELS) 
+dim(CPTf23KOpath_with_LEVELS) #139 ko pathways
+
+# Write file to save for later
+write.table(CPTf23KOpath_with_LEVELS, file = "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/picrust2_out_CPTf2023/KEGG_pathways_out_CPTf/Edited_KO_CPTf23_path_abun_unstrat_descrip.tsv", sep = "\t")
+```
+
+Now use the above final file to merge by levels in microbiomeAnalyst.
