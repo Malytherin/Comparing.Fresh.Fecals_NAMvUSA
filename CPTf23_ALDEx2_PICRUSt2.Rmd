@@ -26,7 +26,7 @@ library(patchwork)
 d2colors <- c("#003f5c", "#ffa600")
 ```
 
-# Level 3 Analysis
+### Level 3 Analysis
 
 ##### Import KO pathway abundance file (path_abun_unstrat.tsv)
 ```{r}
@@ -135,7 +135,7 @@ CPTf23_KO_pathway_abund <- read.table("/Users/morganmaly/OneDrive - Smithsonian 
 
 ```
 
-#### Boxplots - LEVEL 3 (don't need to do this, nothing is significant after BH correction)
+#### Boxplots - LEVEL 3
 ```{r}
 head(CPTf23_KO_pathway_abund)
 dim(CPTf23_KO_pathway_abund)
@@ -173,8 +173,7 @@ ggplot(CPTf23_3lev, aes(x=Population, y=ko00430, fill = Population)) +
 
 ```
 
-# ALDEx2 at Level 2
-
+### ALDEx2 at Level 2
 ```{r}
 # Read in file made in microbiome analyst
 df_CPTf23_abun_L2 <- read.csv(file = "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/CPTf23_MicrobiomeAnalyst/CPTf23_MbAnalyst_OutputFiles/MicrobiomeAnalyst_CPTf23_Level2_featuretable.csv", header = TRUE, row.names = 1)
@@ -231,7 +230,7 @@ head(dfCPTf23_ko_L2)
 CPTf23_conds_USAvNAM <- c(rep("USA",8), rep("NAM",8))
 ```
 
-# Run ALDEx t-test - level 2
+### Run ALDEx t-test - level 2
 ```{r}
 CPTf23_KO_abun_ALDEx_USAvNAM_level2 <- aldex(dfCPTf23_ko_L2, CPTf23_conds_USAvNAM, mc.samples = 128, test = "t", effect = TRUE, denom = "all", verbose = FALSE)
 
@@ -240,7 +239,6 @@ df.CPTf23_KO_abun_ALDEx_USAvNAM_level2 <- as.data.frame(CPTf23_KO_abun_ALDEx_USA
 head(df.CPTf23_KO_abun_ALDEx_USAvNAM_level2)
 # Write it out to save
 #write.csv(df.CPTf23_KO_abun_ALDEx_USAvNAM_level2, "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/CPTf23_ALDEx2/df.CPTf23_ALDEx2_ko_LEVEL2_abund_USAvNAM.csv")
-# Again,none are significant after adustment (wi.eBH: between effect)
 
 ```
 
@@ -341,10 +339,9 @@ CarbMetab <- ggplot(CPTf23_2lev, aes(x= Population, y = Carbohydrate_metabolism,
 # Combine Level 2 pathway plots
 LipidMetab + ParasiteDis + CarbMetab + plot_layout(nrow = 1)
 
-
 ```
 
-# ALDEx2 at LEVEL 1
+### ALDEx2 at LEVEL 1
 
 #### Import and prepare data for Level 1
 ```{r}
@@ -412,7 +409,6 @@ head(df.CPTf23_KO_abun_ALDEx_USAvNAM_level1)
 
 # Write it out to save
 write.csv(df.CPTf23_KO_abun_ALDEx_USAvNAM_level1, "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/CPTf23_ALDEx2/CPTf23_ALDEx2_ko_LEVEL1_abund_USAvNAM.csv")
-# Again,none are significant after adjustment (wi.eBH: between effect)
 
 ```
 
