@@ -9,7 +9,6 @@ Categorize PICRUSt levels using hierarchy map so they can also be aggregated and
 NOTE: KEGG hierarchy classifications file is from Natalie Roberts (made in 2021)
 
 
-
 ```{r, include=FALSE, eval=FALSE}
 ### Read in BRITE hierarchy per KO.
 # Not using this method for now.
@@ -23,14 +22,6 @@ test_ko <- read.table("KO_CPTf_pred_metagenome_unstrat_descrip.tsv", header=TRUE
 rownames(test_ko) <- toupper(rownames(test_ko))
 rownames(test_ko) <- gsub("^KO", "K", rownames(test_ko))
 View(test_ko)
-
-### Alternatively, when reading in legacy TSV BIOM file (PICRUSt1 output): 
-# test_ko <- read.table("/path/to/test_ko.tsv",
-#                      header=TRUE, sep="\t", row.names=1, skip=1, comment.char="")
- 
-#if(length(which(colnames(test_ko) == "KEGG_Pathways")) > 0) {
-#     test_ko <- test_ko[, -which(colnames(test_ko) == "KEGG_Pathways")]
-#}
 
 ### Run function to categorize all KOs by level 3 in BRITE hierarchy.
 test_ko_L3 <- categorize_by_function_l3(test_ko, kegg_brite_map)
