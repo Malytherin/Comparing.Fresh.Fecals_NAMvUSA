@@ -524,6 +524,5 @@ write.table(cptf23_picrust_featuretable, file = tsv_path, sep = "\t", row.names 
 
 # See "CPTf23_Picrust2.ipynb" file for PICRUSt2 analyses
 # See "CPTf23_Picrust2_categorize_by_function.Rmd" for post Picrust2 data aggregation
-# See "CPTf23_ALDEx2_PICRUSt2.Rmd" for statistical tests of Picrust2 categories and levels
-# See "CPTf23_ALDEx2_Picrust2_Visualizations.Rmd" for creating figures from ALDEx2 anaylses of Picrust2 data
+# See "CPTf23_ALDEx2_PICRUSt2.Rmd" for statistical tests and visualizations of Picrust2 categories and levels
 ```
