@@ -1,0 +1,550 @@
+---
+title: "Two.Pop.Comparisons_Analyses"
+author: "M. Maly"
+date: "2024-03-08"
+output: html_document
+---
+
+Code for running analysis for Cheetah fresh fecal samples from ex situ cheetahs in Namibia and USA. These are rarefied samples to even sampling depth of the lowest sample sum. 
+
+Preprocessing code is: Two.Pop.Comparisons_Preprocessing.Rmd
+
+#### Load libraries
+```{r, echo=FALSE, results='hide'}
+library(Biostrings)
+library(XVector)
+library(IRanges)
+library(S4Vectors)
+library(stats4)
+library(BiocGenerics)
+library(parallel)
+library(ape)
+library(ggplot2)
+library(phyloseq)
+library(car)
+library(lme4)
+library(lattice)
+library(pairwiseAdonis)
+library(vegan)
+library(dplyr)
+library(ggpubr)
+library(patchwork)
+library(scales)
+```
+
+#### Read in phyloseq object files 
+```{r}
+# Feature Table
+CPT_featureTab <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPT23_featuretable_Nov23.csv", header = TRUE, row.names = 1)
+
+#Make compatible for phyloseq format
+asv_tab = otu_table(CPT_featureTab, taxa_are_rows = TRUE)
+
+# Load taxonomy table
+taxonomy <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPT23_taxonomy_Nov23.csv", row.names = 1)
+
+# Needs to be a matrix
+taxonomy <- as.matrix(taxonomy)
+# Make compatible for phyloseq
+taxonomy_final = tax_table(taxonomy)
+
+metadata <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/Metadata_CPT23_final.csv", header = TRUE, row.names = 1)
+# WHY ARE THERE 256 ROWS??? # idk, deleted the extras in excel. It was the same rows repeated multiple times.
+
+# make compatible for phyloseq
+mf <- sample_data(metadata)
+
+# read in DNA sequences
+DNAseqs <- readDNAStringSet("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf_2023_DNAsequences.fasta")
+head(DNAseqs)
+
+# read in phylogenetic tree (rooted tree) - removed ASVs not in phyloseq to remake this tree
+tree = read_tree("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_cleanseqs_exported_tree/CPTf23_cleanseqs_tree.nwk")
+
+# Merge it all together
+CPTf23 <- merge_phyloseq(mf, asv_tab, taxonomy_final, DNAseqs, tree)
+CPTf23
+
+# Save sample data as dataframe
+df_CPTf23 <- as(sample_data(CPTf23), "data.frame")
+```
+
+#### Load color scheme
+```{r}
+d2colors <- c("#003f5c", "#ffa600")
+```
+
+### Basic descriptive stats
+```{r}
+
+sum(sample_sums(CPTf23)) #50,800 vs CPTf(OG) 225,760
+min(sample_sums(CPTf23)) #3175 vs old 14110
+max(sample_sums(CPTf23)) #3175
+mean(sample_sums(CPTf23))
+
+# Number of taxa is 226
+get_taxa_unique(CPTf23, taxonomic.rank = "Phylum")
+
+```
+
+## Alpha Diversity
+
+#### Alpha descriptive statistics
+```{r}
+# Mean and SD of SR and PD
+df_CPTf23 %>% 
+  group_by(Population) %>%
+  summarise(mean = mean(SR),
+            SD = sd(SR))
+
+df_CPTf23 %>% 
+  group_by(Population) %>%
+  summarise(mean = mean(PD),
+            SD = sd(PD))
+```
+
+### Alpha diversity - models
+```{r}
+# Response variable: SR ------------
+
+#anova (WITHOUT random effect of Fecal.ID)
+CPTf23_aov_SR <- aov(SR ~ Population, data = df_CPTf23)
+CPTf23_aov_SR
+summary(CPTf23_aov_SR) # Location is still significant p =0.000661 vs OLD:p = 0.0000398
+plot(CPTf23_aov_SR) 
+# Above plot gives 5 different plots:
+# 1. Residuals vs Fitted (want the red line to be relatively straight) [it is]
+# 2. Normal Q-Q (want them to be linear) [are mostly..]
+# 3. Scale-Location (not really sure what this is or what we want it to look like? flat?)
+# 4. Residuals vs. Leverage (Cook's distance) - checks for outliers? Want samples to be within the dashed line [i think this looks good?]
+### 
+
+# check distribution of SR
+hist(df_CPTf23$SR) # distribution looks... skewed-ish?
+
+# Use Shapiro-Wilk normality test (for SR WITHOUT random effects)
+shapiro.test(df_CPTf23$SR) # want pval to be > 0.05 to pass test (It is p = 0.41)
+
+# Levene's test - normality (does not include random effect of Fecal.ID)
+leveneTest(SR ~ Population, df_CPTf23) #again want > 0.05 to pass test of normality (it is!)
+# p = 0.389
+
+# Response variable = PD ----------------------------
+
+#anova
+CPTf_aov_PD <- aov(PD ~ Population, data = df_CPTf23)
+CPTf_aov_PD
+summary(CPTf_aov_PD) # Population p = 8.43e-05 vs OLD pval = 0.00049 (significant)
+plot(CPTf_aov_PD) 
+# Above plot gives 5 different plots:
+# 1. Residuals vs Fitted (want the red line to be relatively straight)
+# 2. Normal Q-Q (want them to be linear)
+# 3. Scale-Location (not really sure what this is or what we want it to look like? flat?)
+# 4. Residuals vs. Leverage (Cook's distance) - checks for outliers? Want samples to be within the dashed line
+
+### 
+
+# check distribution of PD
+hist(df_CPTf23$PD) # still maybe skewed?
+
+# Use Shapiro-Wilk normality test (for PD WITHOUT random effects)
+shapiro.test(df_CPTf23$PD) # want pval to be > 0.05 to pass test; it is JUST barely p = 0.05412
+
+
+# Levene's test - normality (does not include random effect of Fecal.ID)
+leveneTest(PD ~ Population, df_CPTf23) # NOT significant p=0.1291
+```
+
+### CPTf23 alpha box plots
+```{r}
+# Create data frame with average SR values for each Location
+df_CPTf23.SR_mean <- df_CPTf23 %>%
+  group_by(Population) %>%
+  summarize(average = mean(SR)) %>%
+  ungroup()
+
+# Box plot of SR by Sample Day with lines connecting mean values
+CPTf.SR <- df_CPTf23%>% 
+  ggplot(mapping = aes(x = Population, y = SR, fill = Population)) +
+  geom_boxplot() +
+  geom_point(data = df_CPTf23.SR_mean,
+             mapping = aes(x = Population, y = average),
+             color = "black",
+             shape = 5) +
+  geom_jitter(width = 0.1) + 
+  ylab("Species Richness") +
+  scale_fill_manual(values = d2colors) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  labs(x = "Population", tag = "A") +
+  stat_compare_means(label = "p.format", method = "anova", label.y = 120, size = 4)
+
+
+# Create data frame with average PD values for each Location
+df_CPTf23.PD_mean <- df_CPTf23 %>%
+  group_by(Population) %>%
+  summarize(average = mean(PD)) %>%
+  ungroup()
+
+# Box plot of PD by Sample Day with lines connecting mean values
+CPTf.PD <- df_CPTf23%>% 
+  ggplot(mapping = aes(x = (Population), y = PD, fill = Population)) +
+  geom_boxplot() +
+  geom_point(data = df_CPTf23.PD_mean,
+             mapping = aes(x = Population, y = average),
+             color = "black",
+             shape = 5) +
+  geom_jitter(width = 0.1) + 
+  ylab("Faith's PD") +
+  scale_fill_manual(values = d2colors) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  labs(x = "Population", tag = "B") +
+  stat_compare_means(label = "p.format", method = "anova", label.y = 6.25, size = 4)
+
+# Combine alpha plots
+CPTf.SR + CPTf.PD + plot_layout(nrow = 1)
+```
+
+## Beta Diversity 
+
+### Beta Ordinations and PCoA plots
+```{r}
+# Bray Curtis Plot-----------------------------------------------
+# Create distance measurements and matrix
+bray_CPTf23 <- phyloseq::distance(CPTf23, "bray")
+
+# Create PCoA plot
+bray_CPTf23.ord <- ordinate(CPTf23, method = "PCoA", bray_CPTf23)
+
+# Axes 1 and 2
+CPTf23_bray <- plot_ordination(CPTf23, bray_CPTf23.ord, axes = c(1,2), color = "Population")
+CPTf23Bray1 <- CPTf23_bray + 
+  geom_point(size=4) + 
+  theme_classic() + 
+  theme(text = element_text(size=20)) + 
+  stat_ellipse(aes(group=Population)) +
+  scale_shape_manual(values = c(15,16,17,18,24,25,0,1,15,16,17,18,24,25,0,1)) + scale_color_manual(values= d2colors,name="Population")
+
+CPTf23Bray1.2 <- CPTf23Bray1 +
+  labs(title = "Bray-Curtis", tag = "A") +
+  theme(legend.position = "none") +
+  scale_x_continuous(labels = label_number(accuracy = 0.1)) +
+  scale_y_continuous(labels = label_number(accuracy = 0.1))
+
+# Jaccard Plot------------------------
+# Create distance measurements and matrix
+jac_CPTf23 <- phyloseq::distance(CPTf23, "jaccard", binary = TRUE)
+
+# Create PCoA plot coordinates 
+jac_CPTf23.ord <- ordinate(CPTf23, method = "PCoA", jac_CPTf23)
+
+# Axes 1 and 2
+CPTf23_jac <- plot_ordination(CPTf23, jac_CPTf23.ord, axes = c(1,2), color = "Population")
+CPTf23Jac1 <- CPTf23_jac + 
+  geom_point(size=4) + 
+  theme_classic() + 
+  theme(text = element_text(size=20)) + 
+  stat_ellipse(aes(group=Population)) + 
+  scale_shape_manual(values = c(15,16,17,18,24,25,0,1,15,16,17,18,24,25,0,1)) +
+  scale_color_manual(values= d2colors, name="Population")
+CPTf23Jac1
+CPTf23Jac1.2 <- CPTf23Jac1 +
+  labs(title = "Jaccard", tag = "B") +
+  theme(legend.position = "none") +
+  scale_x_continuous(labels = label_number(accuracy = 0.1)) +
+  scale_y_continuous(labels = label_number(accuracy = 0.1))
+
+# Unweighted Unifrac Plot -------------
+# Create distance measurements and matrix
+unweigh_CPTf23 <- phyloseq::distance(CPTf23, "unifrac") # 225 ASVs in CPTf23 but 449 in the tree. Means one of the ASVs that was used to make the tree is one of the base roots. Need to remake tree from sequences AFTER decontam. DONE 11.24.23 (works now without error!)
+
+# Create PCoA plot
+unw_CPTf23.ord <- ordinate(CPTf23, method = "PCoA", unweigh_CPTf23)
+
+
+CPTf23_unw <- plot_ordination(CPTf23, unw_CPTf23.ord, axes = c(1,2), color = "Population")
+# Axes 1 and 2
+CPTf23UNW1.2 <- CPTf23_unw + 
+  geom_point(size=4) +
+  theme_classic() + 
+  theme(text = element_text(size=20)) + 
+  stat_ellipse(aes(group=Population)) + 
+  scale_shape_manual(values = c(15,16,17,18,24,25,0,1,15,16,17,18,24,25,0,1)) +
+  scale_color_manual(values=d2colors,name="Population")
+CPTf23UNW1.2
+CPTf23UNW1.2 <- CPTf23UNW1.2 +
+  labs(title = "Unweighted Unifrac", tag = "C") +
+  scale_x_continuous(labels = label_number(accuracy = 0.1)) +
+  scale_y_continuous(labels = label_number(accuracy = 0.1))
+
+# Beta PCoA plots of all three measures, axes 1 and 2
+CPTf23Bray1.2 + CPTf23Jac1.2 + CPTf23UNW1.2 + plot_layout(nrow = 2, guides = "collect")
+
+```
+
+### Beta Diversity: PERMANOVA models
+```{r}
+# Bray-Curtis PERMANOVA ----
+adonis2(bray_CPTf23 ~ Population, data = df_CPTf23, method = "bray")
+# Jaccard PERMANOVA ----
+adonis2(jac_CPTf23 ~ Population, data = df_CPTf23, method = "jaccard")
+# Unweighted Unifrac PERMANOVA ----
+adonis2(unweigh_CPTf23 ~ Population, data = df_CPTf23, method = "unifrac")
+
+```
+
+### Beta Diversity: PERMDISP models
+```{r}
+df_CPTf23$Population <- as.factor(df_CPTf23$Population)
+groups <- df_CPTf23[["Population"]]
+class(groups)
+levels(groups)
+
+# Bray Curtis PERMDISP ----
+Bray_disp <- betadisper(bray_CPTf23, groups, type = "centroid")
+anova(Bray_disp)
+# Jaccard PERMDISP ----
+Jacc_disp <- betadisper(jac_CPTf23, groups, type = "centroid")
+anova(Jacc_disp)
+# Unweighted UniFrac PERMDISP ----
+Unw_disp <- betadisper(unweigh_CPTf23, groups, type = "centroid")
+anova(Unw_disp)
+
+# Beta Dispersion plots
+plot(Bray_disp)
+plot(Jacc_disp)
+plot(Unw_disp)
+```
+
+## Relative Abundance
+
+### Phylum merged
+```{r}
+get_taxa_unique(CPTf23, "Phylum")
+CPTf23_p1 <- tax_glom(CPTf23, taxrank = 'Phylum')
+CPTf23_p2= merge_samples(CPTf23_p1, "Population")
+CPTf23_p2 <- transform_sample_counts(CPTf23_p2, function(x) x/sum(x))
+CPTf23_p3 <- psmelt(CPTf23_p2)
+CPTf23_p3$Phylum <- as.character(CPTf23_p3$Phylum)
+
+CPTf23_p3$Phylum[CPTf23_p3$Abundance < 0.01] <- "Phyla < 1% abund."
+
+# Make Relative Abundance Plot by Population
+
+plot.rel.ab.CPTf23p <- ggplot(data=CPTf23_p3, aes(x=Sample, y=Abundance, fill=Phylum, label = PercentRA))
+CPTf23Pop_RelAbun <- plot.rel.ab.CPTf23p + 
+  geom_bar(aes(x=Sample,y=Abundance), stat="identity", position="stack")  +
+  ylab("Relative abundance (Fraction of 1)") + 
+  theme_classic() + 
+  labs(x ="") + 
+  theme(text = element_text(size = 22)) + 
+  scale_fill_manual(values= c06, name="Phylum")
+
+# Make plot with % values per phyla in bar chart
+
+CPTf23_p3$PercentRA <- round((CPTf23_p3$Abundance), digits = 4)
+CPTf23_p3$PercentRAp <- percent(CPTf23_p3$PercentRA)
+
+CPTf23TestRA <- ggplot(data = CPTf23_p3, aes(x=Sample, y=Abundance, fill = Phylum, label = PercentRAp)) + 
+  geom_bar(stat = "identity") +
+  geom_text(size = 4, 
+            position = position_stack(vjust = 0.5),
+            color = "grey",
+            fontface = "bold") +
+  ylab("Relative abundance \n(Fraction of 1)") + 
+  theme_classic() + 
+  labs(x ="") + 
+  theme(text = element_text(size = 15)) + 
+  scale_fill_manual(values= c06,name="Phylum")
+CPTf23TestRA 
+```
+
+### Calculate relative abundance and ASV counts for each phyla in both populations
+```{r}
+### SPLIT by Population to get mean % abundances and ASVs per Phyla
+# Subset by Population
+CPTf23NAM <- subset_samples(CPTf23, Population =="NAM")
+CPTf23USA <- subset_samples(CPTf23, Population =="USA")
+# Filter ASVs out that aren't in these populations
+CPTf23NAM <- filter_taxa(CPTf23NAM, function(x) {sum(x > 0) > 1}, prune = TRUE)
+CPTf23USA <- filter_taxa(CPTf23USA, function(x) {sum(x > 0) > 1}, prune = TRUE)
+#make a dataframe from the phyloseq object
+dfCPTf23NAM <- as(sample_data(CPTf23NAM), "data.frame")
+dfCPTf23USA <- as(sample_data(CPTf23USA), "data.frame")
+
+# Bacteroidetes --------------------------
+# NAM
+100*sum(taxa_sums(subset_taxa(CPTf23NAM, Phylum == "Bacteroidetes")))/sum(taxa_sums(CPTf23NAM))
+# Mean abundance = 27.37% (vs OLD 28.23%)
+ntaxa(subset_taxa(CPTf23NAM, Phylum == "Bacteroidetes"))
+# Number of ASVs = 40 vs 33 (old)
+# USA 
+100*sum(taxa_sums(subset_taxa(CPTf23USA, Phylum == "Bacteroidetes")))/sum(taxa_sums(CPTf23USA))
+# Mean abundance = 22.51% vs 18.6% (old)
+ntaxa(subset_taxa(CPTf23USA, Phylum == "Bacteroidetes"))
+# Number of ASVs = 19 vs 14 (old)
+
+# Proteobacteria -------------------------
+
+100*sum(taxa_sums(subset_taxa(CPTf23NAM, Phylum == "Proteobacteria")))/sum(taxa_sums(CPTf23NAM))
+# Mean abundance = 2.73 vs 3.05 (old) 
+ntaxa(subset_taxa(CPTf23NAM, Phylum == "Proteobacteria"))
+# Number of ASVs = 7 vs 11 (old) 
+# USA
+100*sum(taxa_sums(subset_taxa(CPTf23USA, Phylum == "Proteobacteria")))/sum(taxa_sums(CPTf23USA))
+# Mean abundance = 4.19 vs 2.32 (old) 
+ntaxa(subset_taxa(CPTf23USA, Phylum == "Proteobacteria"))
+# Number of ASVs = 6 vs 7 (old) 
+
+# Firmicutes ----------------------------
+# NAM
+100*sum(taxa_sums(subset_taxa(CPTf23NAM, Phylum == "Firmicutes")))/sum(taxa_sums(CPTf23NAM))
+# Mean abundance = 40.39 vs 40.56% (old) 
+ntaxa(subset_taxa(CPTf23NAM, Phylum == "Firmicutes"))
+# Number of ASVs = 83 vs 114 (old) 
+# USA
+100*sum(taxa_sums(subset_taxa(CPTf23USA, Phylum == "Firmicutes")))/sum(taxa_sums(CPTf23USA))
+# Mean abundance = 48.05 vs 58.76 (old) 
+ntaxa(subset_taxa(CPTf23USA, Phylum == "Firmicutes"))
+# Number of ASVs = 74 vs 80 (old) 
+
+# Fusobacteria ---------------------------
+# NAM
+100*sum(taxa_sums(subset_taxa(CPTf23NAM, Phylum == "Fusobacteria")))/sum(taxa_sums(CPTf23NAM))
+# Mean abundance = 18.96 vs 16.36% (old) 
+ntaxa(subset_taxa(CPTf23NAM, Phylum == "Fusobacteria"))
+# Number of ASVs = 15 vs 15 (old) 
+# USA
+100*sum(taxa_sums(subset_taxa(CPTf23USA, Phylum == "Fusobacteria")))/sum(taxa_sums(CPTf23USA))
+# Mean abundance = 19.62 vs 16.74% (old) 
+ntaxa(subset_taxa(CPTf23USA, Phylum == "Fusobacteria"))
+# Number of ASVs = 10 vs 8 (old) 
+
+# Actinobacteria ---------------------------
+# NAM
+100*sum(taxa_sums(subset_taxa(CPTf23NAM, Phylum == "Actinobacteria")))/sum(taxa_sums(CPTf23NAM))
+# Mean abundance = 10.5 vs 11.80% (old) 
+ntaxa(subset_taxa(CPTf23NAM, Phylum == "Actinobacteria"))
+# Number of ASVs = 12 vs 16 (old) 
+# USA
+100*sum(taxa_sums(subset_taxa(CPTf23USA, Phylum == "Actinobacteria")))/sum(taxa_sums(CPTf23USA))
+# Mean abundance = 5.63 vs 3.58% (old) 
+ntaxa(subset_taxa(CPTf23USA, Phylum == "Actinobacteria"))
+# Number of ASVs = 8 vs 7 (old) 
+
+```
+
+### Venn Diagrams --
+```{r, eval=FALSE}
+library(MicEco)
+# Difference in ps_euler vs. ps_venn: euler changes the size of the circles proportional to the counts/percentages within them. Example: ccf has more ASVs so the CCF circle is bigger than SCBI. regular ps_venn does NOT change circle size, only lists numbers.
+ps_euler(
+  CPTf23,
+  "Population",
+  fraction = 0,
+  weight = FALSE,
+  type = "counts",
+  relative = FALSE,
+  plot = TRUE,
+  col = "black",
+  fill = c("#008fd1","#ffa600"))
+
+
+ps_euler(
+  CPTf23,
+  "Population",
+  fraction = 0,
+  weight = FALSE,
+  type = "counts",
+  relative = TRUE,
+  plot = TRUE,
+  col = c("#008fd1","#ffa600"),
+  fill = c("#008fd1","#ffa600")
+)
+
+ps_venn(
+  CPTf23,
+  "Population",
+  fraction = 0,
+  weight = TRUE,
+  type = "counts",
+  relative = TRUE,
+  plot = TRUE,
+  col = c("#008fd1","#ffa600")
+)
+ps_venn(
+  CPTf23,
+  "Population",
+  fraction = 0,
+  weight = FALSE,
+  type = "counts",
+  relative = FALSE,
+  plot = TRUE,
+  col = c("#008fd1","#ffa600")
+)
+```
+
+### Lefse in Microbiome Marker
+```{r, echo=FALSE}
+library(microbiomeMarker)
+
+# LefSe is better at dealing with all the zeroes of microbiome data
+cptf23_lefse <- run_lefse(CPTf23,
+          group = "Population",
+          lda_cutoff = 4)
+head(marker_table(cptf23_lefse))
+cptf23_lefse_mt <- marker_table(cptf23_lefse)
+
+#View(cptf23_lefse_mt)
+#CPTf23_mt_df <- as.data.frame(cptf23_lefse_mt)
+# write out marker table to csv
+#write.csv(cptf23_lefse_mt, file = "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_LefSe/CPTf23_LefSe_LDA4_markertable.csv")
+
+sorted_cptf23_lefse_mt <- cptf23_lefse_mt[order(cptf23_lefse_mt$padj, decreasing = FALSE), ]
+head(sorted_cptf23_lefse_mt)
+#View(sorted_cptf23_lefse_mt)
+
+# Abundance of 26 enriched groups compared by populations
+cptf23_abd <- plot_abundance(cptf23_lefse, group = "Population") +
+  scale_fill_manual(values = c("NAM" = "#003f5c", "USA" = "#ffa600"))
+cptf23_abd 
+
+cptf23_efbar <- plot_ef_bar(cptf23_lefse) #26
+cptf23_efbar + scale_fill_manual(values = c("NAM" = "#003f5c", "USA" = "#ffa600"))
+
+CPTf23_clado <- plot_cladogram(cptf23_lefse, color = c("NAM" = "#003f5c", "USA" = "#ffa600")) + 
+  theme(plot.margin = margin(0, 0, 0, 0)) + 
+  labs(tag = "A") +
+  theme(text = element_text(size = 15))
+
+CPTf23_clado
+
+# Heatmap
+CPTf23_lef_htmp <- plot_heatmap(cptf23_lefse, transform = "log10p", group = "Population", annotation_col = c("NAM" = "#003f5c", "USA" = "#ffa600"), cluster_marker = TRUE, cluster_sample = TRUE, sample_label = TRUE, label_level = 1) + labs(tag = "B")
+
+CPTf23_lef_htmp
+
+# plot effect size
+plot_ef_dot(cptf23_lefse) + scale_fill_manual(values =  c("NAM" = "#003f5c", "USA" = "#ffa600"))
+
+```
+
+## Create files for PICRUSt2 (run in terminal)
+```{r}
+# Make PICRUSt2 feature table (.tsv) ----
+cptf23_picrust_featuretable <- (CPT_featureTab)
+                                          
+# Create .tsv file path
+tsv_path <- "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/CPTf23_PICRUSt_featuretable.tsv"
+
+# write .tsv file with a header for the row names
+write.table(cptf23_picrust_featuretable, file = tsv_path, sep = "\t", row.names = TRUE, col.names = TRUE)
+
+# Edit .tsv file manually to add column header "OTUID" above the ASVs (required for picrust)
+
+# See "CPTf23_Picrust2.ipynb" file for PICRUSt2 analyses
+# See "CPTf23_Picrust2_categorize_by_function.Rmd" for post Picrust2 data aggregation
+# See "CPTf23_ALDEx2_PICRUSt2.Rmd" for statistical tests of Picrust2 categories and levels
+# See "CPTf23_ALDEx2_Picrust2_Visualizations.Rmd" for creating figures from ALDEx2 anaylses of Picrust2 data
+```
