@@ -1,0 +1,485 @@
+---
+title: "CPTf23_ALDEx2_PICRUSt2"
+author: "M. Maly"
+date: "2024-01-14"
+output: html_document
+---
+
+Code for running ALDEx2 on PICRUSt2 data for CPTf2023 data comparing KEGG Ortholog pathways at 3 levels between USA and Namibian cheetahs
+
+
+Install ALDEx2 package (if needed)
+```{r, eval=FALSE}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("ALDEx2")
+```
+
+Load libraries and color scheme
+```{r, results='hide'}
+library(phyloseq)
+library(ggplot2)
+library(dplyr)
+library(ALDEx2)
+library(patchwork)
+d2colors <- c("#003f5c", "#ffa600")
+```
+
+# Level 3 Analysis
+
+##### Import KO pathway abundance file (path_abun_unstrat.tsv)
+```{r}
+CPTf23_KO_pathway_abund <- read.table("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/picrust2_out_CPTf2023/KEGG_pathways_out_CPTf/path_abun_unstrat.tsv", sep = "\t", row.names = 1, header = TRUE)
+
+CPTf23_KO_pathway_abund <- as.data.frame(CPTf23_KO_pathway_abund)
+
+# Round data to whole integer
+CPTf23_KO_pathway_abund_int <- round(as.data.frame(CPTf23_KO_pathway_abund),0)
+```
+
+##### Import metadata file
+```{r}
+CPTf23_Picrust_metadata_file <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/CPTf23_Picrust2_Metadata.csv", header = TRUE, row.names = 1)
+```
+
+#### Import pathway abundance and metadata as phyloseq objects, then merge into one file
+```{r}
+# Level 3 KEGG Pathways ----
+CPTf23_KO_table <- as.matrix(CPTf23_KO_pathway_abund_int)
+
+# OTU table
+KO_CPTf23 <- otu_table(CPTf23_KO_table, taxa_are_rows = TRUE)
+# Metadata file
+META_CPTf23 <- sample_data(CPTf23_Picrust_metadata_file)
+# merge
+CPTf23_KO_ps <- phyloseq(KO_CPTf23, META_CPTf23)
+```
+
+#### Create subsets based on the variable you're comparing (NAM vs USA)
+```{r}
+# For Namibia
+CPTf23_KO_NAM = subset_samples(CPTf23_KO_ps, Population == "NAM")
+# For US
+CPTf23_KO_USA = subset_samples(CPTf23_KO_ps, Population == "USA")
+```
+
+#### Merge subsets to make sure subset variables are in the same order
+```{r}
+CPTf23_ps = merge_phyloseq(CPTf23_KO_USA,CPTf23_KO_NAM)
+
+# Make dataframe
+dfCPTf23_KO <- as.data.frame(otu_table(CPTf23_ps))
+```
+
+#### Create a vector of conditions for NAM vs USA
+```{r}
+CPTf23_conds_USAvNAM <- c(rep("USA",8), rep("NAM",8))
+```
+
+# Run t-test for USA vs NAM and create csv document with output LEVEL 3
+```{r}
+# Run ALDEx t-test
+CPTf23_KO_abun_ALDEx_USAvNAM <- aldex(dfCPTf23_KO, CPTf23_conds_USAvNAM, mc.samples = 128, test = "t", effect = TRUE, denom = "all", verbose = FALSE)
+# To see transformed data can run the code below:
+#transformed_data_raw <- aldex.clr(dfCPTf23_KO, CPTf23_conds_USAvNAM, mc.samples = 128, denom = "all", verbose = TRUE)
+#head(transformed_data_raw)
+summary(CPTf23_KO_abun_ALDEx_USAvNAM)
+
+# Create data frame
+df.CPTf23_KO_abun_ALDEx_USAvNAM <- as.data.frame(CPTf23_KO_abun_ALDEx_USAvNAM)
+head(df.CPTf23_KO_abun_ALDEx_USAvNAM)
+```
+
+# Write out dataframe to save
+```{r, echo=FALSE, results='hide'}
+write.csv(df.CPTf23_KO_abun_ALDEx_USAvNAM, "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/CPTf23_ALDEx2/CPTf23_ALDEx2_KO_abund_USAvNAM.csv")
+```
+
+#### Merge files Level 3
+```{r}
+dim(dfCPTf23_KO) 
+rownames(dfCPTf23_KO)
+dim(df.CPTf23_KO_abun_ALDEx_USAvNAM) 
+rownames(df.CPTf23_KO_abun_ALDEx_USAvNAM)
+
+# Merge by row.names
+df_ko_level3_tt <- merge(dfCPTf23_KO, df.CPTf23_KO_abun_ALDEx_USAvNAM, by = 'row.names', all = TRUE)
+head(df_ko_level3_tt) # Left NAs where there was no stats for the pathway (pathways were 0 across the board)
+rownames(df_ko_level3_tt) <- df_ko_level3_tt$Row.names
+rownames(df_ko_level3_tt)
+
+# Now need to fill in level descriptions
+# File from Natalie that has all the levels:
+KEGGMappingHeirarchy <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/Kegg_Pathways_Heirarchy_040921.csv", header = TRUE, row.names = 1)
+head(KEGGMappingHeirarchy)
+rownames(KEGGMappingHeirarchy)
+
+# Now add in levels by merging by row.names
+df_Aldex_tt_with_allLEVELS <- merge(df.CPTf23_KO_abun_ALDEx_USAvNAM, KEGGMappingHeirarchy, by = 'row.names', all = FALSE)
+head(df_Aldex_tt_with_allLEVELS)
+
+# Write file to save for later
+# write.csv(df_Aldex_tt_with_allLEVELS, file = "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/CPTf23_ALDEx2/CPTf23df_Aldex2_tt_with_rawabund_and_allLEVELS.csv")
+
+# Now add in levels by merging by row.names
+df_Aldex_tt_individs_with_allLEVELS <- merge(df_ko_level3_tt, KEGGMappingHeirarchy, by = 'row.names', all = FALSE)
+head(df_Aldex_tt_individs_with_allLEVELS)
+#### NO LEVEL 3 pathways are significant!
+
+# Write file to save for later
+# write.csv(df_Aldex_tt_individs_with_allLEVELS, file = "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/CPTf23_ALDEx2/CPTf23df_Aldex2_tt_individs_with_rawabund_and_allLEVELS.csv")
+
+# Now need to use below file to put into MicrobiomeAnalyst to collapse to level 2 and/or 1
+CPTf23_KO_pathway_abund <- read.table("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/picrust2_out_CPTf2023/KEGG_pathways_out_CPTf/path_abun_unstrat.tsv", sep = "\t", row.names = 1, header = TRUE)
+
+```
+
+#### Boxplots - LEVEL 3 (don't need to do this, nothing is significant after BH correction)
+```{r}
+head(CPTf23_KO_pathway_abund)
+dim(CPTf23_KO_pathway_abund)
+
+# To make box plots, convert raw counts into rel abundance (percentages)
+CPTf23_lvl3 <- CPTf23_KO_pathway_abund %>%
+  mutate(across(1:16, function(x) x/sum(x)))
+head(CPTf23_lvl3)
+rownames(CPTf23_lvl3)
+
+# Make samples rows and pathways columns
+CPTf23_3lev <- as.data.frame(t(CPTf23_lvl3))
+head(CPTf23_3lev)
+str(CPTf23_3lev) # Make sure data is numeric, and class data.frame
+# Add population column
+Population <- c(rep("USA",8), rep("NAM",8))
+CPTf23_3lev$Population <- Population
+head(CPTf23_3lev)
+dim(CPTf23_3lev)
+
+# Make boxplots for any significant pathways (none are, this is just an example)
+ggplot(CPTf23_3lev, aes(x=Population, y=ko00600, fill = Population)) + 
+  geom_boxplot() +
+  theme_classic() +
+  scale_fill_manual(values = d2colors) +
+  ylab("KO Pathway Level 3: \nSphingolipid metabolism \nRelative Abundance (%)") +
+  theme(legend.position = "none")
+
+ggplot(CPTf23_3lev, aes(x=Population, y=ko00430, fill = Population)) + 
+  geom_boxplot() +
+  theme_classic() +
+  scale_fill_manual(values = d2colors) +
+  ylab("KO Pathway Level 3: \nTaurine and hypotaurine metabolism \nRelative Abundance (%)") +
+  theme(legend.position = "none")
+
+```
+
+# ALDEx2 at Level 2
+
+```{r}
+# Read in file made in microbiome analyst
+df_CPTf23_abun_L2 <- read.csv(file = "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/CPTf23_MicrobiomeAnalyst/CPTf23_MbAnalyst_OutputFiles/MicrobiomeAnalyst_CPTf23_Level2_featuretable.csv", header = TRUE, row.names = 1)
+head(df_CPTf23_abun_L2)
+# Need to remove last two rows from MicrobiomeAnalyst output (rows 29 and 30)
+CPTf23_abun_L2 <- df_CPTf23_abun_L2[-c(29,30), ]
+head(CPTf23_abun_L2)
+str(CPTf23_abun_L2)
+# Convert data into numeric form
+CPTf23_abun_l2 <- mutate_all(CPTf23_abun_L2, function (x) as.numeric(as.character(x)))
+head(CPTf23_abun_l2)
+# Round data to integer
+CPTf23_abun_L2_int <- round(as.data.frame(CPTf23_abun_l2),0)
+head(CPTf23_abun_L2_int)
+```
+
+#### Import metadata file
+```{r}
+CPTf23_Picrust_metadata_file <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/CPTf23_Picrust2_Metadata.csv", header = TRUE, row.names = 1)
+```
+
+#### Import pathway abundance and metadata as phyloseq objects, then merge into one file
+```{r}
+CPTf23_ko_L2_table <- as.matrix(CPTf23_abun_L2_int)
+head(CPTf23_ko_L2_table)
+# OTU table
+ko_L2_CPTf23 <- otu_table(CPTf23_ko_L2_table, taxa_are_rows = TRUE)
+head(ko_L2_CPTf23)
+# Metadata file
+META_CPTf23 <- sample_data(CPTf23_Picrust_metadata_file)
+# merge
+CPTf23_ko_L2_ps <- phyloseq(ko_L2_CPTf23, META_CPTf23)
+```
+
+#### Create subsets based on the variable you're comparing (NAM vs USA)
+```{r}
+# For Namibia
+CPTf23_ko_L2_NAM = subset_samples(CPTf23_ko_L2_ps, Population == "NAM")
+# For US
+CPTf23_ko_L2_USA = subset_samples(CPTf23_ko_L2_ps, Population == "USA")
+```
+
+#### Merge subsets to make sure subset variables are in the same order
+```{r}
+CPTf23_ko_L2_ps = merge_phyloseq(CPTf23_ko_L2_USA,CPTf23_ko_L2_NAM)
+
+# Make dataframe
+dfCPTf23_ko_L2 <- as.data.frame(otu_table(CPTf23_ko_L2_ps))
+head(dfCPTf23_ko_L2)
+```
+
+#### Create a vector of conditions for NAM vs USA
+```{r}
+CPTf23_conds_USAvNAM <- c(rep("USA",8), rep("NAM",8))
+```
+
+# Run ALDEx t-test - level 2
+```{r}
+CPTf23_KO_abun_ALDEx_USAvNAM_level2 <- aldex(dfCPTf23_ko_L2, CPTf23_conds_USAvNAM, mc.samples = 128, test = "t", effect = TRUE, denom = "all", verbose = FALSE)
+
+# Create data frame
+df.CPTf23_KO_abun_ALDEx_USAvNAM_level2 <- as.data.frame(CPTf23_KO_abun_ALDEx_USAvNAM_level2)
+head(df.CPTf23_KO_abun_ALDEx_USAvNAM_level2)
+# Write it out to save
+#write.csv(df.CPTf23_KO_abun_ALDEx_USAvNAM_level2, "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/CPTf23_ALDEx2/df.CPTf23_ALDEx2_ko_LEVEL2_abund_USAvNAM.csv")
+# Again,none are significant after adustment (wi.eBH: between effect)
+
+```
+
+#### Level 2 Box plots from raw values
+```{r}
+# Read in file made in microbiome analyst
+df_CPTf23_abun_L2 <- read.csv(file = "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/CPTf23_MicrobiomeAnalyst/CPTf23_MbAnalyst_OutputFiles/MicrobiomeAnalyst_CPTf23_Level2_featuretable.csv", header = TRUE, row.names = 1)
+head(df_CPTf23_abun_L2)
+# Need to remove last two rows from MicrobiomeAnalyst output (rows 29 and 30)
+CPTf23_abun_L2 <- df_CPTf23_abun_L2[-c(29,30), ]
+head(CPTf23_abun_L2)
+str(CPTf23_abun_L2)
+# Convert data into numeric form
+CPTf23_abun_l2 <- mutate_all(CPTf23_abun_L2, function (x) as.numeric(as.character(x)))
+head(CPTf23_abun_l2)
+str(CPTf23_abun_l2)
+
+# To make box plots, convert raw counts into rel abundance (percentages)
+CPTf23_lvl2 <- CPTf23_abun_l2 %>%
+  mutate(across(1:16, function(x) x/sum(x)))
+head(CPTf23_lvl2)
+rownames(CPTf23_lvl2)
+
+# Make samples rows and pathways columns
+CPTf23_2lev <- as.data.frame(t(CPTf23_lvl2))
+head(CPTf23_2lev)
+str(CPTf23_2lev) # Make sure data is numeric, and class data.frame
+# Add population column
+Population <- c(rep("USA",8), rep("NAM",8))
+CPTf23_2lev$Population <- Population
+head(CPTf23_2lev)
+
+# Change column names to make it easier for R
+colnames(CPTf23_2lev)
+dim(CPTf23_2lev)
+level2_names <- c("Amino_acid_metabolism", 
+                  "Biosynthesis_of_other_secondary_metabolites", 
+                  "Carbohydrate_metabolism", 
+                  "Cell_growth_and_death",
+                  "Cell_motility",
+                  "Cellular_community__prokaryotes",
+                  "Digestive_system",
+                  "Endocrine_system",
+                  "Energy_Metabolism",
+                  "Environmental_adaptation",
+                  "Excretory_system",
+                  "Folding_sorting_and_degradation",
+                  "Glycan_biosynthesis_and_metabolism",
+                  "Immune_system",
+                  "Infectious_disease_bacterial",
+                  "Infectious_disease_parasitic",
+                  "Lipid_Metabolism",
+                  "Membrane_transport",
+                  "Metabolism_of_cofactors_and_vitamins",
+                  "Metabolism_of_other_amino_acids",
+                  "Metabolism_of_terpenoids_and_polyketides",
+                  "Nucleotide_metabolism",
+                  "Replication_and_repair",
+                  "Signal_Transduction",
+                  "Transcription",
+                  "Translation",
+                  "Transport_and_catabolism",
+                  "Xenobiotics_biodegradation_and_metabolism",
+                  "Population")
+length(level2_names) #29
+colnames(CPTf23_2lev) <- level2_names
+colnames(CPTf23_2lev)
+
+# Lipid_Metabolism: Not quite significant wi.eBH = 0.054
+LipidMetab <- ggplot(CPTf23_2lev, aes(x= Population, y = Lipid_Metabolism, fill = Population)) +
+  geom_boxplot() +
+  theme_classic() +
+  scale_fill_manual(values = d2colors) +
+  labs(y = "Level 2 KO Pathway: \nLipid Metabolism \nRelative Abundance") +
+  theme(legend.position = "none") +
+  labs(tag = "A")
+
+# Parasitic infectious disese: Not quite significant wi.eBH = 0.076
+ParasiteDis <- ggplot(CPTf23_2lev, aes(x= Population, 
+                                    y = Infectious_disease_parasitic,
+                                    fill = Population)) +
+  geom_boxplot() +
+  theme_classic() +
+  scale_fill_manual(values = d2colors) +
+  labs(y = "Level 2 KO Pathway: \nParasitic Infectious Disease \nRelative Abundance") +
+  theme(legend.position = "none") +
+  labs(tag = "B")
+
+# Carbohydrate_Metabolism: Not quite significant wi.eBH = 0.053
+CarbMetab <- ggplot(CPTf23_2lev, aes(x= Population, y = Carbohydrate_metabolism, fill = Population)) +
+  geom_boxplot() +
+  theme_classic() +
+  scale_fill_manual(values = d2colors) +
+  labs(y = "Level 2 KO Pathway: \nCarbohydrate Metabolism \nRelative Abundance") +
+  theme(legend.position = "none") +
+  labs(tag = "C")
+
+# Combine Level 2 pathway plots
+LipidMetab + ParasiteDis + CarbMetab + plot_layout(nrow = 1)
+
+
+```
+
+# ALDEx2 at LEVEL 1
+
+#### Import and prepare data for Level 1
+```{r}
+# Read in file made in microbiome analyst
+df_CPTf23_abund_L1 <- read.csv(file = "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/CPTf23_MicrobiomeAnalyst/CPTf23_MbAnalyst_OutputFiles/MicrobiomeAnalyst_CPTf23_Level1_featuretable.csv", header = TRUE, row.names = 1)
+head(df_CPTf23_abund_L1)
+
+# Need to remove last two rows from MicrobomeAnalyst output (rows 7 and 8)
+CPTf23_abund_L1 <- df_CPTf23_abund_L1[-c(7,8), ]
+str(CPTf23_abund_L1)
+
+# Convert data into numeric form
+CPTf23_abun_l1 <- mutate_all(CPTf23_abund_L1, function(x) as.numeric(as.character(x)))
+str(CPTf23_abun_l1)
+
+# Round data to integer
+CPTf23_abund_L1_int <- round(as.data.frame(CPTf23_abun_l1), 0)
+head(CPTf23_abund_L1_int)
+
+# Import metadata file (if not already done from previous levels)
+CPTf23_Picrust_metadata_file <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/CPTf23_Picrust2_Metadata.csv", header = TRUE, row.names = 1)
+```
+
+#### Create Level 1 phyloseq object
+```{r}
+CPTf23_ko_L1_table <- as.matrix(CPTf23_abund_L1_int)
+head(CPTf23_ko_L1_table)
+
+# Make OTU table
+ko_l1_CPTf23 <- otu_table(CPTf23_ko_L1_table, taxa_are_rows = TRUE)
+head(ko_l1_CPTf23)
+
+# Make metadata file compatible for phyloseq (again, do this if did not do it in above code)
+META_CPTf23 <- sample_data(CPTf23_Picrust_metadata_file)
+
+# Merge together to create ps object
+CPTf23_ko_L1_ps <- phyloseq(ko_l1_CPTf23, META_CPTf23)
+```
+
+#### Create subsets and remerge to make sure subset variables are in the same order
+```{r}
+# For Namibia
+CPTf23_ko_L1_NAM = subset_samples(CPTf23_ko_L1_ps, Population == "NAM")
+# For USA
+CPTf23_ko_L1_USA = subset_samples(CPTf23_ko_L1_ps, Population == "USA")
+
+# Merge back together
+CPTf23_ko_L1_ps = merge_phyloseq(CPTf23_ko_L1_USA,CPTf23_ko_L1_NAM)
+
+# Make dataframe
+dfCPTf23_ko_L1 <- as.data.frame(otu_table(CPTf23_ko_L1_ps))
+head(dfCPTf23_ko_L1)
+```
+
+# Run ALDEx2 on LEVEL 1
+```{r}
+# Create a vector of conditions for Population comparison (USA vs NAM)
+CPTf23_conds_USAvNAM <- c(rep("USA",8), rep("NAM",8))
+
+CPTf23_KO_abun_ALDEx_USAvNAM_level1 <- aldex(dfCPTf23_ko_L1, CPTf23_conds_USAvNAM, mc.samples = 128, test = "t", effect = TRUE, denom = "all", verbose = FALSE)
+
+# Create data frame
+df.CPTf23_KO_abun_ALDEx_USAvNAM_level1 <- as.data.frame(CPTf23_KO_abun_ALDEx_USAvNAM_level1)
+head(df.CPTf23_KO_abun_ALDEx_USAvNAM_level1)
+
+# Write it out to save
+write.csv(df.CPTf23_KO_abun_ALDEx_USAvNAM_level1, "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/CPTf23_ALDEx2/CPTf23_ALDEx2_ko_LEVEL1_abund_USAvNAM.csv")
+# Again,none are significant after adjustment (wi.eBH: between effect)
+
+```
+
+#### Level 1 Box plots from raw values
+```{r}
+# Read in file made in microbiome analyst
+df_CPTf23_abun_L1 <- read.csv(file = "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_PICRUSt2/CPTf23_MicrobiomeAnalyst/CPTf23_MbAnalyst_OutputFiles/MicrobiomeAnalyst_CPTf23_Level1_featuretable.csv", header = TRUE, row.names = 1)
+head(df_CPTf23_abun_L1)
+
+# Need to remove last two rows from MicrobiomeAnalyst output (rows 7 and 8)
+CPTf23_abun_L1 <- df_CPTf23_abun_L1[-c(7,8), ]
+head(CPTf23_abun_L1)
+str(CPTf23_abun_L1)
+# Convert data into numeric form
+CPTf23_abun_l1 <- mutate_all(CPTf23_abun_L1, function (x) as.numeric(as.character(x)))
+head(CPTf23_abun_l1)
+str(CPTf23_abun_l1)
+
+# To make box plots, convert raw counts into rel abundance (percentages)
+CPTf23_lvl1 <- CPTf23_abun_l1 %>%
+  mutate(across(1:16, function(x) x/sum(x)))
+head(CPTf23_lvl1)
+rownames(CPTf23_lvl1)
+
+# Make samples rows and pathways columns
+CPTf23_1lev <- as.data.frame(t(CPTf23_lvl1))
+head(CPTf23_1lev)
+str(CPTf23_1lev) # Make sure data is numeric, and class data.frame
+# Add population column
+Population <- c(rep("USA",8), rep("NAM",8))
+CPTf23_1lev$Population <- Population
+head(CPTf23_1lev)
+
+# Change column names to make it easier for R
+colnames(CPTf23_1lev)
+dim(CPTf23_1lev)
+level1_names <- c("Cellular_Processes",
+                  "Environmental_Information_Processing",
+                  "Genetic_Information_Processing",
+                  "Human_Diseases",
+                  "Metabolism",
+                  "Organismal_Systems",
+                  "Population")
+length(level1_names) #7
+colnames(CPTf23_1lev) <- level1_names
+colnames(CPTf23_1lev)
+
+# Mean and SD of Metabolism
+CPTf23_1lev %>% 
+  group_by(Population) %>%
+  summarise(mean = mean(Metabolism),
+            SD = sd(Metabolism))
+
+# Organismal Systems: Not significant 
+ggplot(CPTf23_1lev, aes(x= Population, y = Organismal_Systems, fill = Population)) +
+  geom_boxplot() +
+  theme_classic() +
+  scale_fill_manual(values = d2colors) +
+  labs(y = "Level 1 KO Pathway: Organismal Systems \nRelative Abundance (%)") +
+  theme(legend.position = "none")
+
+# Metabolism: Not significant 
+ggplot(CPTf23_1lev, aes(x= Population, y = Metabolism, fill = Population)) +
+  geom_boxplot() +
+  theme_classic() +
+  scale_fill_manual(values = d2colors) +
+  labs(y = "Level 1 KO Pathway: Metabolism \nRelative Abundance") +
+  theme(legend.position = "none")
+
+```
