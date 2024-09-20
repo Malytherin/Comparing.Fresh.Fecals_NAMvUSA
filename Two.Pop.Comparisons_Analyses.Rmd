@@ -35,31 +35,30 @@ library(scales)
 #### Read in phyloseq object files 
 ```{r}
 # Feature Table
-CPT_featureTab <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPT23_featuretable_Nov23.csv", header = TRUE, row.names = 1)
+CPT_featureTab <- read.csv("CPT23_featuretable_Nov23.csv", header = TRUE, row.names = 1)
 
 #Make compatible for phyloseq format
 asv_tab = otu_table(CPT_featureTab, taxa_are_rows = TRUE)
 
 # Load taxonomy table
-taxonomy <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPT23_taxonomy_Nov23.csv", row.names = 1)
+taxonomy <- read.csv("CPT23_taxonomy_Nov23.csv", row.names = 1)
 
 # Needs to be a matrix
 taxonomy <- as.matrix(taxonomy)
 # Make compatible for phyloseq
 taxonomy_final = tax_table(taxonomy)
 
-metadata <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/Metadata_CPT23_final.csv", header = TRUE, row.names = 1)
-# WHY ARE THERE 256 ROWS??? # idk, deleted the extras in excel. It was the same rows repeated multiple times.
+metadata <- read.csv("Metadata_CPT23_final.csv", header = TRUE, row.names = 1)
 
 # make compatible for phyloseq
 mf <- sample_data(metadata)
 
 # read in DNA sequences
-DNAseqs <- readDNAStringSet("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf_2023_DNAsequences.fasta")
+DNAseqs <- readDNAStringSet("CPTf_2023_DNAsequences.fasta")
 head(DNAseqs)
 
 # read in phylogenetic tree (rooted tree) - removed ASVs not in phyloseq to remake this tree
-tree = read_tree("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_cleanseqs_exported_tree/CPTf23_cleanseqs_tree.nwk")
+tree = read_tree("CPTf23_cleanseqs_tree.nwk")
 
 # Merge it all together
 CPTf23 <- merge_phyloseq(mf, asv_tab, taxonomy_final, DNAseqs, tree)
