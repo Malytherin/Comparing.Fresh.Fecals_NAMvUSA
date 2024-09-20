@@ -268,7 +268,7 @@ CPTf23Bray1.2 + CPTf23Jac1.2 + CPTf23UNW1.2 + plot_layout(nrow = 2, guides = "co
 
 ```
 
-### Beta Diversity: PERMANOVA models
+#### Beta Diversity: PERMANOVA models
 ```{r}
 # Bray-Curtis PERMANOVA ----
 adonis2(bray_CPTf23 ~ Population, data = df_CPTf23, method = "bray")
@@ -279,7 +279,7 @@ adonis2(unweigh_CPTf23 ~ Population, data = df_CPTf23, method = "unifrac")
 
 ```
 
-### Beta Diversity: PERMDISP models
+#### Beta Diversity: PERMDISP models
 ```{r}
 df_CPTf23$Population <- as.factor(df_CPTf23$Population)
 groups <- df_CPTf23[["Population"]]
@@ -302,9 +302,9 @@ plot(Jacc_disp)
 plot(Unw_disp)
 ```
 
-## Relative Abundance
+### Relative Abundance
 
-### Phylum merged
+#### By Phylum, merged by Population
 ```{r}
 get_taxa_unique(CPTf23, "Phylum")
 CPTf23_p1 <- tax_glom(CPTf23, taxrank = 'Phylum')
@@ -342,6 +342,7 @@ CPTf23TestRA <- ggplot(data = CPTf23_p3, aes(x=Sample, y=Abundance, fill = Phylu
   labs(x ="") + 
   theme(text = element_text(size = 15)) + 
   scale_fill_manual(values= c06,name="Phylum")
+
 CPTf23TestRA 
 ```
 
@@ -423,7 +424,7 @@ ntaxa(subset_taxa(CPTf23USA, Phylum == "Actinobacteria"))
 ### Venn Diagrams --
 ```{r, eval=FALSE}
 library(MicEco)
-# Difference in ps_euler vs. ps_venn: euler changes the size of the circles proportional to the counts/percentages within them. Example: ccf has more ASVs so the CCF circle is bigger than SCBI. regular ps_venn does NOT change circle size, only lists numbers.
+
 ps_euler(
   CPTf23,
   "Population",
@@ -474,21 +475,14 @@ ps_venn(
 ```{r, echo=FALSE}
 library(microbiomeMarker)
 
-# LefSe is better at dealing with all the zeroes of microbiome data
 cptf23_lefse <- run_lefse(CPTf23,
           group = "Population",
           lda_cutoff = 4)
 head(marker_table(cptf23_lefse))
 cptf23_lefse_mt <- marker_table(cptf23_lefse)
 
-#View(cptf23_lefse_mt)
-#CPTf23_mt_df <- as.data.frame(cptf23_lefse_mt)
-# write out marker table to csv
-#write.csv(cptf23_lefse_mt, file = "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_LefSe/CPTf23_LefSe_LDA4_markertable.csv")
-
 sorted_cptf23_lefse_mt <- cptf23_lefse_mt[order(cptf23_lefse_mt$padj, decreasing = FALSE), ]
 head(sorted_cptf23_lefse_mt)
-#View(sorted_cptf23_lefse_mt)
 
 # Abundance of 26 enriched groups compared by populations
 cptf23_abd <- plot_abundance(cptf23_lefse, group = "Population") +
@@ -515,7 +509,7 @@ plot_ef_dot(cptf23_lefse) + scale_fill_manual(values =  c("NAM" = "#003f5c", "US
 
 ```
 
-## Create files for PICRUSt2 (run in terminal)
+### Create files for PICRUSt2 (run in terminal)
 ```{r}
 # Make PICRUSt2 feature table (.tsv) ----
 cptf23_picrust_featuretable <- (CPT_featureTab)
