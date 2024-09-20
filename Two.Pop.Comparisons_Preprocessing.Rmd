@@ -1,0 +1,522 @@
+---
+title: "Two.Pop.Comparisons_Preprocessing"
+author: "M. Maly"
+date: "2024-03-08"
+output: html_document
+---
+
+Code for importing FASTQ sequences, filtering and trimming, merging, DADA2 and decontam, and building phyloseq object for the comparison of fresh fecal samples from the ex situ Namibian and USA cheetahs.
+
+#### Load libraries
+```{r libraries, echo=FALSE, results='hide'}
+library(Rcpp)
+library(dada2)
+library(phyloseq)
+library(Biostrings)
+library(picante)
+library(ggplot2)
+```
+
+#### Define a path variable to extracted/unzipped FASTQ files
+```{r define path to FASTQs}
+path_cpt <- "~/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/Aju_GMB_DietStudy/FASTQ/CheetahDiet_Sept2023/Cheetah2023-397697683/691856331/CPTf_2023/"
+list.files(path_cpt)
+```
+
+## Filter and Trim reads (DADA2)
+
+#### Sort reads and extract sample names
+```{r sort and extract samples names}
+# Forward and reverse fastq filenames have format: SAMPLENAME_R1_001.fastq and SAMPLENAME_R2_001.fastq
+fnFs_cpt <- sort(list.files(path_cpt, pattern="_R1_001.fastq", full.names = TRUE))
+fnRs_cpt <- sort(list.files(path_cpt, pattern="_R2_001.fastq", full.names = TRUE))
+
+# Extract sample names, assuming filenames have format: SAMPLENAME_XXX.fastq
+sample.names <- sapply(strsplit(basename(fnFs_cpt), "_"), `[`, 1)
+sample.names
+
+sample.names2 <- sapply(strsplit(basename(fnRs_cpt), "_"), `[`, 1)
+sample.names2
+```
+
+#### Inspection of Quality Profiles
+
+##### Forward reads
+```{r plot forward reads}
+plotQualityProfile(fnFs_cpt[1:4])
+```
+##### Reverse reads
+```{r plot reverse reads}
+plotQualityProfile(fnRs_cpt[1:4])
+```
+
+#### Filter and trim
+```{r filter and trim forward and reverse reads}
+filtFs_cpt <- file.path(path_cpt, "filtered", paste0(sample.names, "_F_filt.fastq"))
+filtRs_cpt <- file.path(path_cpt, "filtered", paste0(sample.names, "_R_filt.fastq"))
+
+# OUT3 (trim at 230,170)
+out3 <- filterAndTrim(fnFs_cpt, filtFs_cpt, fnRs_cpt, filtRs_cpt, truncLen=c(230,170),
+                      maxN=0, maxEE=c(2,2), trimLeft = 19, trimRight = 23,
+                      truncQ=2, rm.phix=TRUE, 
+                      compress=TRUE, multithread=TRUE) 
+
+head(out3)
+str(out3)
+summary(out3)
+mean(out3[,2])
+mean(out3[,1])
+
+mean(out3[,2])/mean(out3[,1]) #72.3%; 206,3379 total
+```
+
+#### Learn error rates
+```{r learn error rates}
+errF <- learnErrors(filtFs_cpt, multithread=TRUE) #118908160 total bases in 464485 reads from 7 samples
+errR <- learnErrors(filtRs_cpt, multithread=TRUE) #108983940 total bases in 698615 reads from 17 samples
+```
+
+#### Plot errors
+```{r plot errors}
+plotErrors(errF, nominalQ = TRUE)
+plotErrors(errR, nominalQ = TRUE)
+```
+
+#### Dereplicate amplicon sequences from Fastq files:
+```{r derep}
+derepsFs <- derepFastq(filtFs_cpt, verbose = TRUE)
+derepRs <- derepFastq(filtRs_cpt, verbose = TRUE)
+
+# Name the derep-class objects by the sample names:
+names(derepsFs) <- sample.names
+names(derepRs) <- sample.names
+
+# Sample Inference:
+dadaFs <- dada(derepsFs, err = errF, multithread = TRUE)
+dadaRs <- dada(derepRs, err = errR, multithread = TRUE)
+
+dadaFs[[1]] # DADA2 algorithm inferred 287 true sequence variants from the 18888 unique sequences in the first sample.
+```
+
+#### Merge each denoised pair of F and R reads:
+```{r merge reads}
+mergers <- mergePairs(dadaFs, derepsFs, dadaRs, derepRs, verbose = TRUE)
+
+## Make a sequence table - construct a sample-by-sequence observation matrix:
+seqtab <- makeSequenceTable(mergers)
+
+
+saveRDS(seqtab, "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf_2023_seqtab.rds")
+seqtab <- readRDS("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf_2023_seqtab.rds")
+
+## get an idea about the distribution of the amplicon size in bp
+table(nchar(getSequences(seqtab)))
+```
+
+### Pass off to phyloseq
+```{r phyloseq}
+library(phyloseq)
+
+##combine feature table and taxonomy table in same order
+ps <- phyloseq(otu_table(seqtab.nochim, taxa_are_rows=FALSE), 
+               tax_table(taxa))
+ps #761 taxa and 24 samples (7 taxonomic ranks)
+
+## rename ASVs to numbers
+new.names <- paste0("ASV", seq(ntaxa(ps))) 
+
+# Define new names ASV1, ASV2, ...
+seqs <- taxa_names(ps) # Store sequences
+names(seqs) <- new.names # Make map from ASV1 to full sequence
+taxa_names(ps) <- new.names # Rename to human-friendly format
+
+# Load seqRFLP package
+BiocManager::install("seqRFLP")
+library(seqRFLP)
+
+##convert feature table to matrix
+site_species <-as(otu_table(ps), "matrix")
+
+##need to change this to match mapping file later
+rownames(site_species)
+
+##transpose to make a species by site matrix
+species_site <- t(site_species)
+
+##taxon table 
+tax <- as(tax_table(ps), "matrix")
+head(seqs)
+
+# Identify the directory to write all your files to for analysis
+getwd()
+setwd("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/")
+
+# Write out files: feature table, taxonomy, and DNA sequences
+write.csv(species_site, "CPTf_2023_feature_table.csv")
+write.csv(tax, "CPTf_2023_taxonomy.csv")
+write.csv(seqs, 'CPTf_2023_DNAsequences.csv')
+
+### convert DNA sequences .csv to a Fasta file
+seq_data <- read.csv("CPTf_2023_DNAsequences.csv", header = T)
+seq_data <- dataframe2fas(seq_data, file = "CPTf_2023_DNAsequences.fasta")
+```
+
+############################################################
+##########SWITCH INTO QIIME 2 using BASH TO CREATE PHYLOGENETIC TREE
+```{bash}
+conda activate qiime2-2023.7
+
+cd /Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/
+
+qiime tools import \
+--input-path CPTf_2023_DNAsequences.fasta \
+--output-path CPTf_2023_DNAsequences.qza \
+--type 'FeatureData[Sequence]'
+
+
+qiime phylogeny align-to-tree-mafft-fasttree \
+--i-sequences CPTf_2023_DNAsequences.qza \
+--o-alignment CPTf_2023_aligned_rep_seqs.qza \
+--o-masked-alignment CPTf_2023_masked_aligned_rep_seqs.qza \
+--o-tree CPTf_2023_unrooted_tree.qza \
+--o-rooted-tree CPTf_2023_rooted_tree.qza
+
+
+## Need to rename tree to informative name after output
+qiime tools export \
+--input-path CPTf_2023_rooted_tree.qza \
+--output-path CPTf_2023_exported_tree
+```
+
+#########################SWITCH BACK INTO R############################
+#### Bring in tree, metadata, feature table, taxonomy assign, and DNA seq to the phyloseq object 
+
+## Create phyloseq object
+
+#### load libraries
+```{r load libraries}
+library(lattice)
+library(permute)
+library(phyloseq)
+library(ape)
+library(vegan)
+library(ggplot2)
+library(dada2)
+library(Rcpp)
+library(BiocGenerics)
+library(parallel)
+library(S4Vectors)
+library(IRanges)
+library(XVector)
+library(Biostrings)
+```
+
+## Read in feature table, metadata, taxonomy, and DNA sequences to build phyloseq object
+```{r create ps object}
+feature_tab <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf_2023_feature_table.csv", header = T, row.names = 1)
+#Make compatible for phyloseq format
+asv_tab = otu_table(feature_tab, taxa_are_rows = TRUE)
+dim(asv_tab) #761 and 24
+View(feature_tab)
+#read in meta data file:
+meta_data1 <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf_2023_Metadata.csv", header = T, row.names = 2)
+View(meta_data1)
+
+# dataframe is expected for sample_data
+class(meta_data1)
+##change quant_reading column to numeric
+meta_data1$quant_reading <- as.numeric(meta_data1$quant_reading)
+# make compatible for phyloseq
+mf <- sample_data(meta_data1)
+
+#read in taxonomy file
+taxonomy <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf_2023_taxonomy.csv", row.names=1)
+# Needs to be a matrix
+taxonomy <- as.matrix(taxonomy)
+# Make compatible for phyloseq
+taxonomy_final = tax_table(taxonomy)
+
+# read in DNA sequences
+DNAseqs <- readDNAStringSet("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf_2023_DNAsequences.fasta")
+head(DNAseqs)
+
+# read in phylogenetic tree (rooted tree)
+tree = read_tree("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf_2023_exported_tree/CPTf_2023_tree.nwk")
+
+#Merge it all together to make Diet phyloseq object (ps_diet)
+# DO NOT ADD TREE YET (add it AFTER decontam otherwise they won't remerge)
+ps_cptf2023 <- merge_phyloseq(mf, asv_tab, taxonomy_final, DNAseqs)
+
+ps_cptf2023 #761 taxa and 24 samples
+sample_names(ps_cptf2023)
+```
+
+
+##########################################
+### RAREFACTION PLOTS (before Decontam, just to see and compare after decontam)
+```{r rarefaction plot option 1}
+
+scripts <- c("graphical_methods.R",
+             "tree_methods.R",
+             "plot_merged_trees.R",
+             "specificity_methods.R",
+             "ternary_plot.R",
+             "richness.R",
+             "edgePCA.R",
+             "copy_number_correction.R",
+             "import_frogs.R",
+             "prevalence.R",
+             "compute_niche.R")
+urls <- paste0("https://raw.githubusercontent.com/mahendra-mariadassou/phyloseq-extended/master/R/", scripts)
+
+for (url in urls) {
+  source(url)
+}
+```
+
+```{r rarefaction plot option 2}
+library(ranacapa)
+
+pscptf2023.rarefaction <- ggrare(ps_cptf2023, step = 200, color = "Location", se = FALSE)
+
+ps_diet.rarefaction <- ggrare(ps_cptf2023, step = 200, color = "Location", se = FALSE)
+
+ps_diet.rarefaction <- ggrare(ps_cptf2023, step = 200, color = "Main.Diet", se = FALSE)
+```
+
+## Run Decontam to remove contaminant sequences
+Split ps objectfor decontam, because these were extracted and amplified in different labs/countries so may have different background contaminants
+
+#### Load packages
+```{r load libraries for decontam}
+library(ggplot2)
+library(phyloseq)
+library(reshape2)
+library(ape)
+library(gridExtra)
+library(decontam)
+```
+
+#### Split ps into USA and NAM phyloseq objects 
+```{r split ps object}
+PTUSA <- subset_samples(ps_cptf2023, Location == "USA")
+PTCCF <- subset_samples(ps_cptf2023, Location == "NAM")
+
+```
+
+### Decontam for USA samples
+```{r USA decontam}
+## Identify contaminants - Combined method with default threshold level
+# NO TREE in ps object
+PTUSA.comb <- isContaminant(PTUSA, method = "combined", conc = "quant_reading", neg = "is.neg")
+head(PTUSA.comb)
+which(PTUSA.comb$contaminant)
+# there are 2: 168 and 295
+
+# Remove all contaminants to create new phyloseq object to merge with CCF
+PTUSA.noncontam <- prune_taxa(!PTUSA.comb$contaminant, PTUSA)
+PTUSA.noncontam # 759 taxa and 13 samples
+
+# Remove negative controls and samples with LOW reads (aka sample sums)
+sort(sample_sums(PTUSA.noncontam)) # Check read count for each sample
+cleanPTUSA <- prune_samples(sample_sums(PTUSA.noncontam)>=1000, PTUSA.noncontam)
+
+# Filter out singletons (only occur once at 1 individual), seems to be a lot of ASVs with little info
+# Code says ASV needs to occur at least 1 time on at least 2 individuals
+cleanPTUSA <- filter_taxa(cleanPTUSA, function(x) {sum(x > 0) >1}, prune = TRUE) 
+cleanPTUSA # 123 taxa and 8 samples
+
+# Compare total sequence counts before and after
+sum(sample_sums(cleanPTUSA))/(sum(sample_sums(PTUSA))) #0.9529649 #old: 0.9984967
+```
+
+Decontam for NAM samples
+```{r decontam NAM samples}
+# Identify contaminants - Combined method with default threshold level
+PTCCF.comb <- isContaminant(PTCCF, method = "combined", conc = "quant_reading", neg = "is.neg")
+head(PTCCF.comb)
+which(PTCCF.comb$contaminant)
+# None
+
+# Remove all contaminants to create new phyloseq object to merge with USA
+PTCCF.noncontam <- prune_taxa(!PTCCF.comb$contaminant, PTCCF)
+PTCCF.noncontam # 761 taxa and 11 samples
+
+# Remove negative controls and samples with LOW reads (aka sample sums)
+sort(sample_sums(PTCCF.noncontam))
+cleanPTCCF <- prune_samples(sample_sums(PTCCF.noncontam)>=20000, PTCCF.noncontam)
+cleanPTCCF # 761 taxa and 8 samples
+
+# Filter out singletons (only occur once at 1 individual), seems to be a lot of ASVs with little info
+# Code says ASV needs to occur at least 1 time on at least 2 individuals
+cleanPTCCF <- filter_taxa(cleanPTCCF, function(x) {sum(x > 0) >1}, prune = TRUE)
+cleanPTCCF # 177 taxa and 8 samples
+
+# Compare total sequence counts before and after
+sum(sample_sums(cleanPTCCF))/(sum(sample_sums(PTCCF))) # 0.9468952 #old 0.9921945
+
+```
+
+## Re-merge NAM and USA ps objects
+```{r}
+#### Can use cleanPTUSA and cleanPTCCF for downstream stats of individ runs
+#### Remerge clean phyloseq objects for downstream comparison analyses!
+
+cleanPTALL <- merge_phyloseq(cleanPTUSA,cleanPTCCF) 
+cleanPTALL # 229 taxa and 16 samples
+
+# Add in tree
+CPT23 <- merge_phyloseq(cleanPTALL,tree)
+CPT23
+
+sum(sample_sums(CPT23)) #645,553 sequences
+
+sort(sample_sums(CPT23))
+83479/3176 # 26.28 fold-change Need to RAREFY (> 10)
+
+# Rarefy by even depth
+set.seed(711)
+CPTf23 <- rarefy_even_depth(CPT23, sample.size = min(sample_sums(CPT23)), replace = FALSE) 
+# 30 OTUs were removed because they are no longer present in any sample after random subsampling
+sort(sample_sums(CPTf23))
+```
+
+#### Save PS as dataframe
+```{r ps as dataframe}
+dfCPTf23<- as(sample_data(CPTf23), "data.frame")
+t_otu <- t(as(otu_table(CPTf23), "matrix"))
+```
+
+### Write out updated files from ps object for easy loading later
+```{r}
+### Need to make an updated feature table and taxonomy table since some ASVs were removed 
+
+### OTU table
+## convert feature table to matrix
+species_site <- as(otu_table(CPTf23), "matrix")
+write.csv(species_site, "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPT23_featuretable_Nov23.csv")
+
+### Taxonomy table
+# taxon table
+tax <- as(tax_table(CPTf23), "matrix")
+write.csv(tax, "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPT23_taxonomy_Nov23.csv")
+```
+
+### Make new tree with ASVs left in ps object (otherwise may get branches without roots if an ASV that was removed was a root node) 
+
+#### Export representative sequences to make a new tree
+```{r new seq file for tree for ps object}
+# Retrieve sequences from ps object (I believe this should bring in ONLY those that are in the ps oject)
+clean_seqs <- refseq(CPTf23) # 226 ASVs
+# Write out csv file of sequences
+write.csv(clean_seqs, "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_cleanseqs.csv")
+# convert .csv to a fasta file
+cleanseq_data <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_cleanseqs.csv")
+cleanseq_data <- dataframe2fas(cleanseq_data, file = "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_cleanseqs.fasta")
+```
+
+#### Make tree with only the ASVs left in the ps object after remerge and decontam (cleanseqs.fasta)
+```{bash, eval=FALSE}
+############################################################
+##########SWITCH INTO QIIME 2 TO CREATE PHYLOGENETIC TREE
+conda activate qiime2-2020.8
+
+cd /Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/
+
+qiime tools import \
+--input-path CPTf23_cleanseqs.fasta \
+--output-path CPTf23_cleanseqs.qza \
+--type 'FeatureData[Sequence]'
+
+
+qiime phylogeny align-to-tree-mafft-fasttree \
+--i-sequences CPTf23_cleanseqs.qza \
+--o-alignment CPTf23_cleanseqs_aligned_rep_seqs.qza \
+--o-masked-alignment CPTf23_cleanseqs_masked_aligned_rep_seqs.qza \
+--o-tree CPTf23_cleanseqs_unrooted_tree.qza \
+--o-rooted-tree CPTf23_cleanseqs_rooted_tree.qza
+
+
+## Most likely need to rename tree to informative name
+qiime tools export \
+--input-path CPTf23_cleanseqs_rooted_tree.qza \
+--output-path CPTf23_cleanseqs_exported_tree
+
+#########################SWITCH BACK INTO R############################
+#### Bring in tree, metadata, feature table, taxonomy assign, and DNA seq to the phyloseq object 
+
+
+```
+
+## Read in FINAL files for phyloseq object (for analyses)
+
+```{r final ps object}
+# Feature Table
+CPT_featureTab <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPT23_featuretable_Nov23.csv", header = TRUE, row.names = 1)
+
+#Make compatible for phyloseq format
+asv_tab = otu_table(CPT_featureTab, taxa_are_rows = TRUE)
+
+# Load taxonomy table
+taxonomy <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPT23_taxonomy_Nov23.csv", row.names = 1)
+
+# Needs to be a matrix
+taxonomy <- as.matrix(taxonomy)
+# Make compatible for phyloseq
+taxonomy_final = tax_table(taxonomy)
+
+metadata <- read.csv("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/Metadata_CPT23_final.csv", header = TRUE, row.names = 1)
+# WHY ARE THERE 256 ROWS??? # idk, deleted the extras in excel. It was the same rows repeated multiple times.
+
+# make compatible for phyloseq
+mf <- sample_data(metadata)
+
+# read in DNA sequences
+DNAseqs <- readDNAStringSet("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf_2023_DNAsequences.fasta")
+head(DNAseqs)
+
+# read in phylogenetic tree (rooted tree)
+tree = read_tree("/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/CPTf23_cleanseqs_exported_tree/CPTf23_cleanseqs_tree.nwk")
+
+# Merge it all together
+CPTf23 <- merge_phyloseq(mf, asv_tab, taxonomy_final, DNAseqs, tree)
+
+# Save sample data as dataframe
+dfCPTf23 <- as(sample_data(CPTf23), "data.frame")
+```
+
+## Calculate alpha diversity metrics
+```{r alpha metrics}
+library(picante)
+
+prunedTree_CPTf <- prune.sample(t_otu, tree)
+PD <- pd(t_otu, prunedTree_CPTf, include.root = F)
+
+#need to have both alpha and df having the same column info
+PD$SampleID <- row.names(PD)
+seqs <- as.data.frame(sample_sums(CPTf23))
+seqs$SampleID <- row.names(seqs)
+#now merge to get sequence counts and SR and PD in mapping file
+cpt.alpha_df <- merge(dfCPTf23, PD, by = "row.names") 
+
+cpt.alpha_df_seqs <- merge(cpt.alpha_df, seqs)
+head(cpt.alpha_df_seqs)
+
+write.csv(cpt.alpha_df_seqs, "/Users/morganmaly/OneDrive - Smithsonian Institution/CheetahGutMicrobiome/COMBINED_PoopTrials/CPTf_2023_fresh_data/Metadata_CPT23_final.csv")
+
+```
+
+### Plot alpha metrics
+```{r final ps alpha metrics and final rarefaction plot}
+####phyloseq - phylo tree with ASV labels and abundances
+myTaxa = names(sort(taxa_sums(CPTf23),decreasing = TRUE)[1:10])
+ex1 = prune_taxa(myTaxa, CPTf23)
+plot(phy_tree(ex1), show.node.label = TRUE)
+plot_tree(ex1, color = "Location", label.tips = "Phylum", ladderize = "left", justify = "left", size = "Abundance")
+
+plot_richness(CPTf23, x="Location", color = "Location", taxa_are_rows())
+plot_bar(CPTf23, fill = "Phylum")
+
+# New Rarefaction plot
+CPTf.rarefaction <- ggrare(CPTf23, step = 200, color = "Location", se = FALSE)
+```
