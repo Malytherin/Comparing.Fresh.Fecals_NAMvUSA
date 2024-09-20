@@ -87,7 +87,7 @@ get_taxa_unique(CPTf23, taxonomic.rank = "Phylum")
 
 ```
 
-## Alpha Diversity
+### Alpha Diversity
 
 #### Alpha descriptive statistics
 ```{r}
@@ -107,25 +107,19 @@ df_CPTf23 %>%
 ```{r}
 # Response variable: SR ------------
 
-#anova (WITHOUT random effect of Fecal.ID)
+#anova
 CPTf23_aov_SR <- aov(SR ~ Population, data = df_CPTf23)
 CPTf23_aov_SR
-summary(CPTf23_aov_SR) # Location is still significant p =0.000661 vs OLD:p = 0.0000398
+summary(CPTf23_aov_SR) # Location is significant p = 0.000661
 plot(CPTf23_aov_SR) 
-# Above plot gives 5 different plots:
-# 1. Residuals vs Fitted (want the red line to be relatively straight) [it is]
-# 2. Normal Q-Q (want them to be linear) [are mostly..]
-# 3. Scale-Location (not really sure what this is or what we want it to look like? flat?)
-# 4. Residuals vs. Leverage (Cook's distance) - checks for outliers? Want samples to be within the dashed line [i think this looks good?]
-### 
 
 # check distribution of SR
-hist(df_CPTf23$SR) # distribution looks... skewed-ish?
+hist(df_CPTf23$SR) 
 
-# Use Shapiro-Wilk normality test (for SR WITHOUT random effects)
+# Use Shapiro-Wilk normality test
 shapiro.test(df_CPTf23$SR) # want pval to be > 0.05 to pass test (It is p = 0.41)
 
-# Levene's test - normality (does not include random effect of Fecal.ID)
+# Levene's test - normality 
 leveneTest(SR ~ Population, df_CPTf23) #again want > 0.05 to pass test of normality (it is!)
 # p = 0.389
 
@@ -134,24 +128,16 @@ leveneTest(SR ~ Population, df_CPTf23) #again want > 0.05 to pass test of normal
 #anova
 CPTf_aov_PD <- aov(PD ~ Population, data = df_CPTf23)
 CPTf_aov_PD
-summary(CPTf_aov_PD) # Population p = 8.43e-05 vs OLD pval = 0.00049 (significant)
+summary(CPTf_aov_PD) # Population p = 8.43e-05 
 plot(CPTf_aov_PD) 
-# Above plot gives 5 different plots:
-# 1. Residuals vs Fitted (want the red line to be relatively straight)
-# 2. Normal Q-Q (want them to be linear)
-# 3. Scale-Location (not really sure what this is or what we want it to look like? flat?)
-# 4. Residuals vs. Leverage (Cook's distance) - checks for outliers? Want samples to be within the dashed line
-
-### 
 
 # check distribution of PD
 hist(df_CPTf23$PD) # still maybe skewed?
 
-# Use Shapiro-Wilk normality test (for PD WITHOUT random effects)
-shapiro.test(df_CPTf23$PD) # want pval to be > 0.05 to pass test; it is JUST barely p = 0.05412
+# Use Shapiro-Wilk normality test 
+shapiro.test(df_CPTf23$PD) # want pval to be > 0.05 to pass test; it is p = 0.05412
 
-
-# Levene's test - normality (does not include random effect of Fecal.ID)
+# Levene's test - normality 
 leveneTest(PD ~ Population, df_CPTf23) # NOT significant p=0.1291
 ```
 
