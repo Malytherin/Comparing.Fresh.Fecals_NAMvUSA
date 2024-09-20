@@ -192,11 +192,11 @@ CPTf.PD <- df_CPTf23%>%
 CPTf.SR + CPTf.PD + plot_layout(nrow = 1)
 ```
 
-## Beta Diversity 
+### Beta Diversity 
 
-### Beta Ordinations and PCoA plots
+#### Beta Ordinations and PCoA plots
 ```{r}
-# Bray Curtis Plot-----------------------------------------------
+# Bray Curtis Plot--------------------------------------------------------------------------
 # Create distance measurements and matrix
 bray_CPTf23 <- phyloseq::distance(CPTf23, "bray")
 
@@ -218,7 +218,7 @@ CPTf23Bray1.2 <- CPTf23Bray1 +
   scale_x_continuous(labels = label_number(accuracy = 0.1)) +
   scale_y_continuous(labels = label_number(accuracy = 0.1))
 
-# Jaccard Plot------------------------
+# Jaccard Plot------------------------------------------------------------------------------
 # Create distance measurements and matrix
 jac_CPTf23 <- phyloseq::distance(CPTf23, "jaccard", binary = TRUE)
 
@@ -241,13 +241,12 @@ CPTf23Jac1.2 <- CPTf23Jac1 +
   scale_x_continuous(labels = label_number(accuracy = 0.1)) +
   scale_y_continuous(labels = label_number(accuracy = 0.1))
 
-# Unweighted Unifrac Plot -------------
+# Unweighted Unifrac Plot -----------------------------------------------------------------
 # Create distance measurements and matrix
-unweigh_CPTf23 <- phyloseq::distance(CPTf23, "unifrac") # 225 ASVs in CPTf23 but 449 in the tree. Means one of the ASVs that was used to make the tree is one of the base roots. Need to remake tree from sequences AFTER decontam. DONE 11.24.23 (works now without error!)
+unweigh_CPTf23 <- phyloseq::distance(CPTf23, "unifrac") 
 
 # Create PCoA plot
 unw_CPTf23.ord <- ordinate(CPTf23, method = "PCoA", unweigh_CPTf23)
-
 
 CPTf23_unw <- plot_ordination(CPTf23, unw_CPTf23.ord, axes = c(1,2), color = "Population")
 # Axes 1 and 2
