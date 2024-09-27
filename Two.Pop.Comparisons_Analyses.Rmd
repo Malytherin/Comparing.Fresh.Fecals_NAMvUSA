@@ -148,10 +148,10 @@ df_CPTf23.SR_mean <- df_CPTf23 %>%
   summarize(average = mean(SR)) %>%
   ungroup()
 
-# Box plot of SR by Sample Day with lines connecting mean values
+# Box plot of SR by Population
 CPTf.SR <- df_CPTf23%>% 
   ggplot(mapping = aes(x = Population, y = SR, fill = Population)) +
-  geom_boxplot() +
+  geom_boxplot(outlier.shape = NA) +
   geom_point(data = df_CPTf23.SR_mean,
              mapping = aes(x = Population, y = average),
              color = "black",
@@ -171,10 +171,10 @@ df_CPTf23.PD_mean <- df_CPTf23 %>%
   summarize(average = mean(PD)) %>%
   ungroup()
 
-# Box plot of PD by Sample Day with lines connecting mean values
+# Box plot of PD by Population
 CPTf.PD <- df_CPTf23%>% 
   ggplot(mapping = aes(x = (Population), y = PD, fill = Population)) +
-  geom_boxplot() +
+  geom_boxplot(outlier.shape = NA) +
   geom_point(data = df_CPTf23.PD_mean,
              mapping = aes(x = Population, y = average),
              color = "black",
