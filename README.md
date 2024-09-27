@@ -1,5 +1,5 @@
 # Comparing.Fresh.Fecals_NAMvUSA
- Code for preprocessing FASTQ files and analysis to produce figures for the fresh fecal comparison objective of "Namibian Cheetahs Fecal Microbiota is More Stable During Degradation and More Diverse Compared to Ex Situ Cheetahs in the USA"
+ Code for preprocessing FASTQ files and analysis to produce figures for the fresh fecal comparison objective of "Fecal Microbiota is More Stable During Degradation and More Diverse Compared for Ex Situ Cheetahs in Namibia Compared to the US"
  
  ## Coding files
  1. Two.Pop.Comparisons_Preprocessing.Rmd - code for preprocessing unpaired FASTQ files for fresh samples from NAM and USA (dada2, decontam, build phylogenetic tree, create phyloseq files, calculate alpha diversity metrics)
